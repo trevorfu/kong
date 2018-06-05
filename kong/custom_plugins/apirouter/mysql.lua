@@ -1,4 +1,3 @@
-local config = require "kong.custom_plugins.apirouter.config"
 local resty_mysql = require "resty.mysql"
 
 local mysql = {}
@@ -9,36 +8,36 @@ local mysql = {}
         false,出错信息.
         true,数据库连接
 --]]
-function mysql:get_connect()
+function mysql:get_connect(conf)
   if ngx.ctx[mysql] then
     return true, ngx.ctx[mysql]
   end
 
-  local client, errmsg = resty_mysql:new()
+  local client, err = resty_mysql:new()
   if not client then
-    return false, "[mysql] socket failed: " .. (errmsg or "nil")
+    return false, "[mysql] socket failed: " .. (err or "nil")
   end
 
-  client:set_timeout(10000)  --10秒
+  client:set_timeout(conf.mysql_timeout)
 
   local options = {
-    host = config.DBHOST,
-    port = config.DBPORT,
-    user = config.DBUSER,
-    password = config.DBPASSWORD,
-    database = config.DBNAME
+    host = conf.mysql_host,
+    port = conf.mysql_port,
+    user = conf.mysql_username,
+    password = conf.mysql_password,
+    database = conf.mysql_dbname
   }
 
-  local result, errmsg, errno, sqlstate = client:connect(options)
-  if not result then
-    return false, "[mysql] connect failed: " .. (errmsg or "nil") .. ", errno: " .. (errno or "nil") ..
+  local ok, err, errno, sqlstate = client:connect(options)
+  if not ok then
+    return false, "[mysql] connect failed: " .. (err or "nil") .. ", errno: " .. (errno or "nil") ..
             ", sql_state: " .. (sqlstate or "nil")
   end
 
-  local query = "SET NAMES " .. config.DEFAULT_CHARSET
-  local result, errmsg, errno, sqlstate = client:query(query)
-  if not result then
-    return false, "[mysql] query failed: " .. (errmsg or "nil") .. ", errno: " .. (errno or "nil") ..
+  local query = "SET NAMES " .. conf.mysql_charset
+  local ok, err, errno, sqlstate = client:query(query)
+  if not ok then
+    return false, "[mysql] query failed: " .. (err or "nil") .. ", errno: " .. (errno or "nil") ..
             ", sql_state: " .. (sqlstate or "nil")
   end
 
@@ -65,21 +64,21 @@ end
         false,出错信息,sqlstate结构.
         true,结果集,sqlstate结构.
 --]]
-function mysql:query(sql)
-  local ret, client = self:get_connect()
-  if not ret then
+function mysql:query(conf, sql)
+  local ok, client = self:get_connect(conf)
+  if not ok then
     return false, client, nil
   end
 
-  local result, errmsg, errno, sqlstate = client:query(sql)
+  local ok, err, errno, sqlstate = client:query(sql)
   self:close()
 
-  if type(result) ~= "table" then
-    local errmsg = "[mysql] query failed," .. " errno:" .. errno .. " errmsg:" .. errmsg .. " sqlstate:" .. sqlstate
-    return false, errmsg, sqlstate
+  if type(ok) ~= "table" then
+    local err = "[mysql] query failed," .. " errno:" .. errno .. " errmsg:" .. err .. " sqlstate:" .. sqlstate
+    return false, err, sqlstate
   end
 
-  return true, result, sqlstate
+  return true, ok, sqlstate
 end
 
 return mysql

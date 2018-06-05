@@ -1,4 +1,3 @@
-local config = require "kong.custom_plugins.apirouter.config"
 local resty_redis = require "resty.redis"
 
 local redis = {}
@@ -9,7 +8,7 @@ local redis = {}
         false,出错信息.
         true,redis连接
 --]]
-function redis:get_connect()
+function redis:get_connect(conf)
   if ngx.ctx[redis] then
     return true, ngx.ctx[redis]
   end
@@ -19,11 +18,25 @@ function redis:get_connect()
     return false, "[redis] socket failed: " .. (errmsg or "nil")
   end
 
-  client:set_timeout(10000)  --10秒
+  client:set_timeout(conf.redis_timeout)
 
-  local result, errmsg = client:connect(config.REDIS_HOST, config.REDIS_PORT)
-  if not result then
-    return false, errmsg
+  local ok, err = client:connect(conf.redis_host, conf.redis_port)
+  if not ok then
+    return false, err
+  end
+  
+  if conf.redis_password and conf.redis_password ~= "" then
+    local ok, err = client:auth(conf.redis_password)
+    if not ok then
+      return false, err
+    end
+  end
+  
+  if conf.redis_database ~= nil and conf.redis_database > 0 then
+    local ok, err = client:select(conf.redis_database)
+    if not ok then
+      return false, err
+    end
   end
 
   ngx.ctx[redis] = client
@@ -37,35 +50,37 @@ function redis:close()
   end
 end
 
-function redis:set(key, value)
-  local ret, client = self:get_connect()
-  if not ret then
+function redis:set(conf, key, value)
+  local ok, client = self:get_connect(conf)
+  if not ok then
     return false, client, nil
   end
 
-  local result, errmsg = client:set(key, value)
+  local ok, err = client:set(key, value)
+  -- set expire 1 week
+  client:expire(key, 604800)
   self:close()
 
-  if not result then
-    return false, nil, "[redis] set value failed: " .. (errmsg or "nil")
+  if not ok then
+    return false, nil, "[redis] set value failed: " .. (err or "nil")
   end
 
-  return true, result, nil
+  return true, ok, nil
 end
 
-function redis:get(key)
-  local ret, client = self:get_connect()
-  if not ret then
+function redis:get(conf, key)
+  local ok, client = self:get_connect(conf)
+  if not ok then
     return false, client, nil
   end
 
-  local result, errmsg = client:get(key)
+  local ok, err = client:get(key)
   self:close()
 
-  if errmsg then
-    return false, nil, "[redis] get value failed: " .. (errmsg or "nil")
+  if err then
+    return false, nil, "[redis] get value failed: " .. (err or "nil")
   else
-    return true, result, nil
+    return true, ok, nil
   end
 end
 
